@@ -1,87 +1,124 @@
-from selenium import webdriver
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-import os
+import urllib2, os, sys
+from itertools import izip
 
+current_proxy = ''
 
-def try_getting_pb(tries):
-    table = driver.find_elements_by_class_name('proxies')[0]
-    tr = table.find_elements_by_tag_name('tr')[tries+1]
-    return tr.find_elements_by_tag_name('td')[0].text
-
-def valid_page():
-    valid_title = "Download music, movies, games, software! The Pirate Bay - The galaxy's most resilient BitTorrent site"
-    return driver.title == valid_title
-
-def query_string(query):
-    q = query.replace(" ", "+")
-    return "/s/?q="+q+"&page=0&orderby=99"
-
-driver = webdriver.Remote(
-   command_executor='http://127.0.0.1:4444/wd/hub',
-   desired_capabilities={'browserName': 'htmlunit',
-                         'version': '2',
-                        'javascriptEnabled': True})
-
-
-proxy_list = "https://thepiratebay-proxylist.org/"
-driver.get(proxy_list)
-
-tries = 30
-
-for counter in range(0, tries):
-
+def clear():
     if os.name == 'nt':
         os.system('cls')
-    else:
+    if os.name == 'posix':
         os.system('clear')
 
-    domain = try_getting_pb(counter)
-    link = "https://" + domain
-    print "Trying "+link+"..."
-    driver.get(link)
-    if valid_page():
-        break
-
-print "\nSuccessfuly got Pirate Bay proxy: "+link
-
-query = raw_input("\nSearch query:\n")
-
-
-driver.get(link + query_string(query))
-print("\n\n\n")
-
-results = driver.find_elements_by_id('searchResult')[0].find_element_by_tag_name('tbody').find_elements_by_tag_name('tr')
-
-result_count = 19
-i = 0
-
-os.system('cls')
-
-magnets = []
-
-for result in results:
-    row = result.find_elements_by_tag_name('td')[1].find_elements_by_tag_name('a')[0]
-    magnets.append(result.find_elements_by_tag_name('td')[1].find_elements_by_tag_name('a')[1])
-    seeds = result.find_elements_by_tag_name('td')[2].text
-    leechers = result.find_elements_by_tag_name('td')[3].text
+def get_mirrors():
+    proxy_list_url = 'https://thepiratebay-proxylist.org/'
 
     try:
-        print u'{0:85}  ({1}:{1})'.format((str)(i+1) + ': ' +row.text, seeds, leechers)
+        print 'Connecting to proxy list...'
+        req = urllib2.Request(proxy_list_url, headers={'User-Agent' : "Magic Browser"})
+        con = urllib2.urlopen( req )
+    except(HTTPError):
+        print 'Could not connect to proxy list'
     except Exception as e:
-        print "[Decode Error]"
-        i-=1
+        print 'Something went wrong'
 
-    if i == result_count:
-        break
-    i+=1
 
-user_choice = raw_input("\nChoose torrent to download\n")
+    proxy_list_urls = []
 
-driver.get(magnets[int(user_choice)-1].get_attribute('href'))
+    for line in con.readlines():
+        if 'https' and 'tr data-probe' in line:
+            proxy_list_urls.append('https://'+line.split('\"')[1].split('/')[2])
 
-dl_button = driver.find_elements_by_class_name('download')[0].find_elements_by_tag_name('a')[0]
+    return proxy_list_urls
 
-if os.name == 'nt':
-    os.startfile(dl_button.get_attribute('href'))
-else:
-    pass
+def try_connections(proxy_list_urls):
+    for url in proxy_list_urls:
+        try:
+            print 'Trying to connect to '+ url
+            req = urllib2.Request(url, headers={'User-Agent' : "Magic Browser"})
+            con = urllib2.urlopen(req)
+            global current_proxy
+            current_proxy = url
+            print 'Connected succssfuly to '+ url
+            create_query(url)
+            break
+        except(urllib2.HTTPError):
+            print 'Could not connect to proxy list'
+
+
+def create_query(url):
+    user_input = raw_input('Search query:\n')
+    q = user_input.replace(" ", "+")
+    query = url + "/s/?q="+q+"&page=0&orderby=99"
+    search_magnet(query)
+
+def search_magnet(search_url):
+    try:
+        print 'Searching...\n'
+        req = urllib2.Request(search_url, headers={'User-Agent' : "Magic Browser"})
+        con = urllib2.urlopen(req)
+        handle_search(con.readlines())
+    except(urllib2.HTTPError):
+        print 'Could not search on proxy'
+
+def handle_search(html):
+    search_urls = []
+    search_prints = []
+    for line in html:
+        if 'td' or 'href' in line:
+            if 'detLink' and 'Details' in line:
+                search_url = current_proxy + line.split('"')[3]
+                search_urls.append(search_url)
+                search_prints.append(line.split(">")[2].replace("</a", ""))
+            if 'align="right"' in line:
+                search_prints.append(line.split(">")[1].replace("</td", ""))
+
+    i = 0
+    result_count = 10
+    curr_result = 0
+    while i < result_count*3:
+        name = search_prints[i]
+        seeds = search_prints[i+1]
+        leechers = search_prints[i+2]
+        if i % 3 == 0:
+            print u'{0:85}  ({1}:{2})'.format((str)(curr_result+1) + ': ' +name, seeds, leechers)
+            curr_result+=1
+        i+=1
+
+    user_search(search_urls)
+
+def user_search(url_list):
+    user_choice = raw_input("\n\n\nTorrent to download: \n")
+    try:
+        int(user_choice)
+    except ValueError:
+        print 'Invalid input'
+
+    try:
+        clear()
+        print 'Fetching magnet...'
+        req = urllib2.Request(url_list[int(user_choice)-1], headers={'User-Agent' : "Magic Browser"})
+        con = urllib2.urlopen(req)
+        fetch_magnet(con.readlines())
+    except(urllib2.HTTPError):
+        print 'Could not fetch magnet'
+
+def fetch_magnet(html):
+    magnet = ''
+    for line in html:
+        if 'icon-magnet' in line:
+            magnet = line.split("\"")[3]
+            break
+    open_magnet(magnet)
+
+def open_magnet(magnet):
+
+    if(os.name == 'nt'):
+        os.startfile(magnet)
+    else:
+        f = open("magnet_dump.txt", "wb")
+        f.write(magnet+"\n")
+        f.close()
+
+if __name__ == '__main__':
+    clear()
+    try_connections(get_mirrors())
