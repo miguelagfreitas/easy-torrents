@@ -59,6 +59,8 @@ def search_magnet(search_url):
         handle_search(con.readlines())
     except(urllib2.HTTPError):
         print 'Could not search on proxy'
+    except Exception:
+        print 'Input error'
 
 def handle_search(html):
     search_urls = []
@@ -92,6 +94,8 @@ def user_search(url_list):
         int(user_choice)
     except ValueError:
         print 'Invalid input'
+    except Exception:
+        print 'Error parsing input'
 
     try:
         clear()
@@ -115,9 +119,14 @@ def open_magnet(magnet):
     if(os.name == 'nt'):
         os.startfile(magnet)
     else:
-        f = open("magnet_dump.txt", "wb")
-        f.write(magnet+"\n")
-        f.close()
+        try:
+            f = open("magnet_dump.txt", "wb")
+            f.write(magnet+"\n")
+            f.close()
+            clear()
+            print 'Dumped magnet as text file'
+        except Exception:
+            print 'Error dumping magnet file'
 
 if __name__ == '__main__':
     clear()
